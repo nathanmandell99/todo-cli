@@ -30,21 +30,30 @@ fn main() {
         println!("add task");
     } else if command == "list" {
         let f: File = File::open("list.txt").expect("Failed to open file.");
-        let mut reader: BufReader<File> = BufReader::new(f);
-        let mut line: String = String::new();
-        let mut len: usize = reader.read_line(&mut line).expect("Failed to read line");
-        println!("read first line");
+        let reader: BufReader<File> = BufReader::new(f);
 
-        let mut id: String;
-        let mut title: String;
-        let mut complete: String;
+        let mut line: String;
+        let mut id: &str;
+        let mut title: &str;
+        let mut status: &str;
+        let mut fields: Vec<&str>;
 
-        while len > 0 {
-            len = reader.read_line(&mut line).expect("Failed to read line");
-            println!("read next line");
-            for field in line.split(',') {
-                println!("{field}");
+        for line_result in reader.lines() {
+            line = line_result.expect("Failed to read line");
+            fields = line.split(",").collect();
+            id = fields[0];
+            if id == "id" {
+                // skip first line of the csv
+                continue;
             }
+            title = fields[1];
+            status = if fields[2] == "true" {
+                "complete"
+            } else {
+                "incomplete"
+            };
+
+            println!("Task {}: {} ({})", id, title, status);
         }
     } else if command == "done" {
         println!("list task as complete");
