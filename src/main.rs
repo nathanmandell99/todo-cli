@@ -96,87 +96,91 @@ fn main() {
         return;
     }
 
-    let command = &args[2];
+    let command: &str = &args[2];
     let file_name = &args[1];
 
-    if command == "add" {
-        let f: File = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(file_name)
-            .expect("Failed to open {file_name}");
+    match command {
+        "add" => {
+            let f: File = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(file_name)
+                .expect("Failed to open {file_name}");
 
-        let mut writer: BufWriter<File> = BufWriter::new(f);
-        let title = match args.get(3) {
-            Some(t) => t,
-            None => {
-                print_usage();
-                return;
-            }
-        };
-
-        let id = get_max_task_id(file_name) + 1;
-        let buf = String::from(format!("\n{id},{title},false"));
-        writer
-            .write_all(buf.as_bytes())
-            .expect("Failed to write to file");
-
-        set_max_task_id(file_name, id);
-        println!("New task created with title {title}");
-    } else if command == "list" {
-        let mut complete_tasks: Vec<Task> = Vec::new();
-        let mut incomplete_tasks: Vec<Task> = Vec::new();
-        read_tasks(&mut incomplete_tasks, &mut complete_tasks, &file_name);
-
-        println!("To-do:");
-        for task in incomplete_tasks {
-            task.print_self();
-        }
-        println!("------------------------------\n");
-        println!("Complete:");
-        for task in complete_tasks {
-            task.print_self();
-        }
-    } else if command == "done" {
-        let task_id = match args.get(3) {
-            Some(t) => t,
-            None => {
-                print_usage();
-                return;
-            }
-        };
-
-        let list_contents = fs::read_to_string(file_name).expect("Failed to read file");
-        let mut lines: Vec<&str> = list_contents.lines().collect();
-        for i in 2..lines.len() {
-            let mut fields: Vec<&str> = lines[i].split(',').collect();
-            let cur_id = fields[0];
-            if cur_id == task_id {
-                if fields[2] == "false" {
-                    fields[2] = "true";
-                } else {
-                    fields[2] = "false";
+            let mut writer: BufWriter<File> = BufWriter::new(f);
+            let title = match args.get(3) {
+                Some(t) => t,
+                None => {
+                    print_usage();
+                    return;
                 }
-                let new_line = fields.join(",");
-                lines[i] = &new_line;
-                fs::write(file_name, lines.join("\n")).expect("Failed to mark task done");
-                return;
+            };
+
+            let id = get_max_task_id(file_name) + 1;
+            let buf = String::from(format!("\n{id},{title},false"));
+            writer
+                .write_all(buf.as_bytes())
+                .expect("Failed to write to file");
+
+            set_max_task_id(file_name, id);
+            println!("New task created with title {title}");
+        }
+        "list" => {
+            let mut complete_tasks: Vec<Task> = Vec::new();
+            let mut incomplete_tasks: Vec<Task> = Vec::new();
+            read_tasks(&mut incomplete_tasks, &mut complete_tasks, &file_name);
+
+            println!("To-do:");
+            for task in incomplete_tasks {
+                task.print_self();
+            }
+            println!("------------------------------\n");
+            println!("Complete:");
+            for task in complete_tasks {
+                task.print_self();
             }
         }
-        println!("Task not found. To see valid tasks, try: ./todo {file_name} list");
-    } else if command == "init" {
-        println!("file_name: {file_name}");
-        let mut f: File = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(file_name)
-            .expect("Failed to create new tasklist");
+        "done" => {
+            let task_id = match args.get(3) {
+                Some(t) => t,
+                None => {
+                    print_usage();
+                    return;
+                }
+            };
+            let list_contents = fs::read_to_string(file_name).expect("Failed to read file");
+            let mut lines: Vec<&str> = list_contents.lines().collect();
 
-        let init_contents = String::from("MAX,0\nid,description,completed");
-        f.write(init_contents.as_bytes())
-            .expect("Failed to write initial contents");
-        println!("Initialized new tasklist {file_name}.");
-    } else {
-        print_usage();
+            for i in 2..lines.len() {
+                let mut fields: Vec<&str> = lines[i].split(',').collect();
+                let cur_id = fields[0];
+                if cur_id == task_id {
+                    if fields[2] == "false" {
+                        fields[2] = "true";
+                    } else {
+                        fields[2] = "false";
+                    }
+                    let new_line = fields.join(",");
+                    lines[i] = &new_line;
+                    fs::write(file_name, lines.join("\n")).expect("Failed to mark task done");
+                    return;
+                }
+            }
+            println!("Task not found. To see valid tasks, try: ./todo {file_name} list");
+        }
+        "init" => {
+            println!("file_name: {file_name}");
+            let mut f: File = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(file_name)
+                .expect("Failed to create new tasklist");
+
+            let init_contents = String::from("MAX,0\nid,description,completed");
+            f.write(init_contents.as_bytes())
+                .expect("Failed to write initial contents");
+            println!("Initialized new tasklist {file_name}.");
+        }
+        _ => print_usage(),
     }
 }
