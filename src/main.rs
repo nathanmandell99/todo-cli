@@ -98,7 +98,6 @@ fn new_list(file_name: &str) -> Result<File, Box<dyn Error>> {
     {
         let mut writer = csv::Writer::from_writer(&mut f);
         writer.write_record(&["id", "description", "completed"])?;
-        // drop the writer here so that we don't get a double-free later
     }
     println!("Initialized new list '{file_name}'");
     Ok(f)
