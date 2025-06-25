@@ -15,6 +15,10 @@ struct Cli {
     /// Sub-command to execute
     #[command(subcommand)]
     command: Command,
+
+    /// Create list if it does not exist
+    #[arg(short = 'c', long = "create")]
+    create: bool,
 }
 
 #[derive(Subcommand)]
@@ -80,7 +84,7 @@ fn get_max_task_id(file_name: &str) -> Result<u32, Box<dyn Error>> {
 
     for line_result in rdr.deserialize() {
         let task: Task = line_result?;
-        next_id = next_id.max(task.id + 1);
+        next_id = next_id.max(task.id);
     }
     Ok(next_id)
 }
@@ -114,7 +118,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .append(true)
                 .open(&cli.file_name)?;
 
-            let mut writer = csv::Writer::from_writer(&mut f);
+            let mut writer = csv::WriterBuilder::new()
+                .has_headers(false)
+                .from_writer(&mut f);
             writer.serialize(&task)?;
 
             println!("New task created with title {description}");
@@ -127,7 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 &mut incomplete_tasks,
                 &mut complete_tasks,
                 &cli.file_name,
-                false,
+                cli.create,
             )?;
 
             println!("To-do:");
