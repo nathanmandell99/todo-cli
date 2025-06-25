@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
+use std::path::Path;
 
 /// Simple CSV-backed to-do list
 #[derive(Parser)]
@@ -99,6 +100,7 @@ fn new_list(file_name: &str) -> Result<File, Box<dyn Error>> {
         writer.write_record(&["id", "description", "completed"])?;
         // drop the writer here so that we don't get a double-free later
     }
+    println!("Initialized new list '{file_name}'");
     Ok(f)
 }
 
@@ -107,24 +109,26 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     match cli.command {
         Command::Add { description } => {
+            if cli.create && !Path::new(&cli.file_name).exists() {
+                new_list(&cli.file_name)?; // writes the header row
+            }
+            let mut f = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&cli.file_name)?;
+
             let task = Task {
                 id: get_max_task_id(&cli.file_name)? + 1,
                 description: description.clone(),
                 completed: false,
             };
 
-            let mut f = OpenOptions::new()
-                .write(true)
-                .append(true)
-                .create(cli.create)
-                .open(&cli.file_name)?;
-
             let mut writer = csv::WriterBuilder::new()
                 .has_headers(false)
                 .from_writer(&mut f);
             writer.serialize(&task)?;
 
-            println!("New task created with title {description}");
+            println!("New task created with title '{description}'");
             Ok(())
         }
         Command::List => {
