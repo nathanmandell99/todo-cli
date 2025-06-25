@@ -1,10 +1,10 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::{env, fs};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Task {
     id: u32,
     description: String,
@@ -26,9 +26,9 @@ fn print_usage() {
 }
 
 fn read_tasks(
-    incomplete_tasks: &mut Vec<Task>,
-    complete_tasks: &mut Vec<Task>,
-    file_name: &String,
+    incomplete_tasks: &mut HashMap<u32, Task>,
+    complete_tasks: &mut HashMap<u32, Task>,
+    file_name: &str,
     create: bool,
 ) -> Result<(), Box<dyn Error>> {
     let f: File = match File::open(file_name) {
@@ -38,52 +38,40 @@ fn read_tasks(
             return Err(err.into());
         }
     };
-    let mut reader = csv::Reader::from_reader(f);
+    let mut reader = csv::ReaderBuilder::new().has_headers(true).from_reader(f);
 
     for line_result in reader.deserialize() {
         let cur_task: Task = line_result?;
         if cur_task.completed {
-            complete_tasks.push(cur_task);
+            complete_tasks.insert(cur_task.id, cur_task);
         } else {
-            incomplete_tasks.push(cur_task);
+            incomplete_tasks.insert(cur_task.id, cur_task);
         }
     }
     Ok(())
 }
 
-fn get_max_task_id(file_name: &String) -> Result<u32, Box<dyn Error>> {
-    let f: File = File::open(file_name)?;
-    let mut reader: BufReader<File> = BufReader::new(f);
-    let mut line = String::new();
-    reader.read_line(&mut line)?;
-    let fields: Vec<&str> = line.split(",").collect();
-    if fields[0] != "MAX" {
-        return Ok(0);
+fn get_max_task_id(file_name: &str) -> Result<u32, Box<dyn Error>> {
+    let mut rdr = csv::Reader::from_path(file_name)?;
+    let mut next_id = 1;
+
+    for line_result in rdr.deserialize() {
+        let task: Task = line_result?;
+        next_id = next_id.max(task.id + 1);
     }
-    Ok(fields[1].trim().parse()?)
+    Ok(next_id)
 }
 
-fn set_max_task_id(file_name: &String, new_max: u32) -> Result<(), Box<dyn Error>> {
-    let list_contents = fs::read_to_string(file_name)?;
-    let mut lines: Vec<&str> = list_contents.lines().collect();
-
-    let header_format = format!("MAX,{new_max}");
-    let new_header: &str = &header_format;
-    lines[0] = new_header;
-
-    fs::write(file_name, lines.join("\n"))?;
-    Ok(())
-}
-
-fn new_list(file_name: &String) -> Result<File, Box<dyn Error>> {
+fn new_list(file_name: &str) -> Result<File, Box<dyn Error>> {
     let mut f: File = OpenOptions::new()
         .write(true)
         .create(true)
         .open(file_name)?;
-
-    let init_contents = String::from("id,description,completed");
-    f.write(init_contents.as_bytes())?;
-    println!("Initialized new tasklist {file_name}.");
+    {
+        let mut writer = csv::Writer::from_writer(&mut f);
+        writer.write_record(&["id", "description", "completed"])?;
+        // drop the writer here so that we don't get a double-free later
+    }
     Ok(f)
 }
 
@@ -96,80 +84,95 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let command: &str = &args[2];
-    let file_name = &args[1];
+    let file_name: &str = &args[1];
 
     match command {
         "add" => {
-            let f: File = OpenOptions::new()
-                .write(true)
-                .append(true)
-                .open(file_name)?;
-
-            let mut writer: BufWriter<File> = BufWriter::new(f);
-            let title = match args.get(3) {
+            let description = match args.get(3) {
                 Some(t) => t,
                 None => {
                     print_usage();
                     return Ok(());
                 }
             };
+            let task = Task {
+                id: get_max_task_id(file_name)? + 1,
+                description: description.clone(),
+                completed: false,
+            };
 
-            let id = get_max_task_id(file_name)? + 1;
-            let buf = String::from(format!("\n{id},{title},false"));
-            writer.write_all(buf.as_bytes())?;
+            let mut f: File = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(file_name)?;
 
-            set_max_task_id(file_name, id)?;
-            println!("New task created with title {title}");
+            let mut writer = csv::Writer::from_writer(&mut f);
+            writer.serialize(&task)?;
+
+            println!("New task created with title {description}");
             Ok(())
         }
         "list" => {
-            let mut complete_tasks: Vec<Task> = Vec::new();
-            let mut incomplete_tasks: Vec<Task> = Vec::new();
+            let mut complete_tasks: HashMap<u32, Task> = HashMap::new();
+            let mut incomplete_tasks: HashMap<u32, Task> = HashMap::new();
+            read_tasks(&mut incomplete_tasks, &mut complete_tasks, file_name, false)?;
+
+            println!("To-do:");
+            for (_id, task) in incomplete_tasks {
+                task.print_self();
+            }
+            println!("------------------------------\n");
+            println!("Complete:");
+            for (_id, task) in complete_tasks {
+                task.print_self();
+            }
+            Ok(())
+        }
+        "done" => {
+            let task_id: u32 = match args.get(3) {
+                Some(t) => match t.parse() {
+                    Ok(task) => task,
+                    Err(err) => {
+                        return Err(err.into());
+                    }
+                },
+                None => {
+                    print_usage();
+                    return Ok(());
+                }
+            };
+            let mut complete_tasks: HashMap<u32, Task> = HashMap::new();
+            let mut incomplete_tasks: HashMap<u32, Task> = HashMap::new();
             read_tasks(
                 &mut incomplete_tasks,
                 &mut complete_tasks,
                 &file_name,
                 false,
             )?;
+            if let Some(task) = complete_tasks
+                .get_mut(&task_id)
+                .or_else(|| incomplete_tasks.get_mut(&task_id))
+            {
+                task.completed = !task.completed;
+            } else {
+                eprintln!("Task not found. To see valid tasks, try: ./todo {file_name} list");
+            }
 
-            println!("To-do:");
-            for task in incomplete_tasks {
-                task.print_self();
-            }
-            println!("------------------------------\n");
-            println!("Complete:");
-            for task in complete_tasks {
-                task.print_self();
-            }
-            Ok(())
-        }
-        "done" => {
-            let task_id = match args.get(3) {
-                Some(t) => t,
-                None => {
-                    print_usage();
-                    return Ok(());
-                }
-            };
-            let list_contents = fs::read_to_string(file_name).expect("Failed to read file");
-            let mut lines: Vec<&str> = list_contents.lines().collect();
+            let mut f: File = OpenOptions::new().write(true).open(file_name)?;
 
-            for i in 2..lines.len() {
-                let mut fields: Vec<&str> = lines[i].split(',').collect();
-                let cur_id = fields[0];
-                if cur_id == task_id {
-                    if fields[2] == "false" {
-                        fields[2] = "true";
-                    } else {
-                        fields[2] = "false";
-                    }
-                    let new_line = fields.join(",");
-                    lines[i] = &new_line;
-                    fs::write(file_name, lines.join("\n")).expect("Failed to mark task done");
-                    return Ok(());
-                }
+            let mut writer = csv::Writer::from_writer(&mut f);
+
+            let mut combined_tasks: Vec<Task> = complete_tasks
+                .drain()
+                .chain(incomplete_tasks.drain())
+                .map(|(_, t)| t)
+                .collect();
+
+            combined_tasks.sort_by_key(|t| t.id);
+
+            for task in combined_tasks {
+                writer.serialize(&task)?;
             }
-            println!("Task not found. To see valid tasks, try: ./todo {file_name} list");
             Ok(())
         }
         "init" => {
