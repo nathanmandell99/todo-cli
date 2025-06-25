@@ -80,7 +80,7 @@ fn read_tasks(
 
 fn get_max_task_id(file_name: &str) -> Result<u32, Box<dyn Error>> {
     let mut rdr = csv::Reader::from_path(file_name)?;
-    let mut next_id = 1;
+    let mut next_id = 0;
 
     for line_result in rdr.deserialize() {
         let task: Task = line_result?;
@@ -116,6 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut f: File = OpenOptions::new()
                 .write(true)
                 .append(true)
+                .create(cli.create)
                 .open(&cli.file_name)?;
 
             let mut writer = csv::WriterBuilder::new()
