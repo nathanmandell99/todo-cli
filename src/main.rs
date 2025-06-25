@@ -1,8 +1,39 @@
+use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
+
+/// Simple CSV-backed to-do list
+#[derive(Parser)]
+#[command(name = "todo", version, about)]
+struct Cli {
+    /// Path to the CSV file that stores the tasks
+    #[arg(value_name = "FILE")]
+    file_name: String,
+
+    /// Sub-command to execute
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Add a new task with the given DESCRIPTION
+    Add {
+        #[arg(value_name = "DESCRIPTION")]
+        description: String,
+    },
+    /// List all tasks
+    List,
+    /// Toggle completion status of the task with the given ID
+    Toggle {
+        #[arg(value_name = "ID")]
+        task_id: u32,
+    },
+    /// Create an empty task list (CSV header row)
+    Init,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Task {
@@ -15,14 +46,6 @@ impl Task {
     fn print_self(&self) {
         println!("Task {}: {}", self.id, self.description);
     }
-}
-
-fn print_usage() {
-    println!("Usage:");
-    println!("List tasks: todo <filename> list");
-    println!("Add task: todo <filename> add <task name>");
-    println!("Complete task: todo <filename> done <task id>");
-    println!("Initialize new task list: todo <filename> init");
 }
 
 fn read_tasks(
@@ -76,27 +99,12 @@ fn new_list(file_name: &str) -> Result<File, Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
+    let cli = Cli::parse();
 
-    if args.len() < 3 {
-        print_usage();
-        return Ok(());
-    }
-
-    let command: &str = &args[2];
-    let file_name: &str = &args[1];
-
-    match command {
-        "add" => {
-            let description = match args.get(3) {
-                Some(t) => t,
-                None => {
-                    print_usage();
-                    return Ok(());
-                }
-            };
+    match cli.command {
+        Command::Add { description } => {
             let task = Task {
-                id: get_max_task_id(file_name)? + 1,
+                id: get_max_task_id(&cli.file_name)? + 1,
                 description: description.clone(),
                 completed: false,
             };
@@ -104,7 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut f: File = OpenOptions::new()
                 .write(true)
                 .append(true)
-                .open(file_name)?;
+                .open(&cli.file_name)?;
 
             let mut writer = csv::Writer::from_writer(&mut f);
             writer.serialize(&task)?;
@@ -112,10 +120,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("New task created with title {description}");
             Ok(())
         }
-        "list" => {
+        Command::List => {
             let mut complete_tasks: HashMap<u32, Task> = HashMap::new();
             let mut incomplete_tasks: HashMap<u32, Task> = HashMap::new();
-            read_tasks(&mut incomplete_tasks, &mut complete_tasks, file_name, false)?;
+            read_tasks(
+                &mut incomplete_tasks,
+                &mut complete_tasks,
+                &cli.file_name,
+                false,
+            )?;
 
             println!("To-do:");
             for (_id, task) in incomplete_tasks {
@@ -128,25 +141,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             Ok(())
         }
-        "done" => {
-            let task_id: u32 = match args.get(3) {
-                Some(t) => match t.parse() {
-                    Ok(task) => task,
-                    Err(err) => {
-                        return Err(err.into());
-                    }
-                },
-                None => {
-                    print_usage();
-                    return Ok(());
-                }
-            };
+        Command::Toggle { task_id } => {
             let mut complete_tasks: HashMap<u32, Task> = HashMap::new();
             let mut incomplete_tasks: HashMap<u32, Task> = HashMap::new();
             read_tasks(
                 &mut incomplete_tasks,
                 &mut complete_tasks,
-                &file_name,
+                &cli.file_name,
                 false,
             )?;
             if let Some(task) = complete_tasks
@@ -155,10 +156,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             {
                 task.completed = !task.completed;
             } else {
-                eprintln!("Task not found. To see valid tasks, try: ./todo {file_name} list");
+                eprintln!(
+                    "Task not found. To see valid tasks, try: ./todo {} list",
+                    cli.file_name
+                );
             }
 
-            let mut f: File = OpenOptions::new().write(true).open(file_name)?;
+            let mut f: File = OpenOptions::new().write(true).open(&cli.file_name)?;
 
             let mut writer = csv::Writer::from_writer(&mut f);
 
@@ -175,12 +179,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             Ok(())
         }
-        "init" => {
-            new_list(file_name)?;
-            Ok(())
-        }
-        _ => {
-            print_usage();
+        Command::Init => {
+            new_list(&cli.file_name)?;
             Ok(())
         }
     }
