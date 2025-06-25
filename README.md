@@ -76,4 +76,4 @@ todo tasks.csv toggle 1
 
 ## 📎 Notes
 - Performance is linear with file size because the whole CSV is read each time.  
-- This project was mainly a learning exercise in Rust CLI ergonomics; contributions are welcome!
+- This project was mainly a learning exercise in Rust CLI ergonomics.
