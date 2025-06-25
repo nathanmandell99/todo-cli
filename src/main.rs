@@ -58,7 +58,7 @@ fn read_tasks(
     file_name: &str,
     create: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let f: File = match File::open(file_name) {
+    let f = match File::open(file_name) {
         Ok(file) => file,
         Err(_) if create => new_list(file_name)?,
         Err(err) => {
@@ -90,7 +90,7 @@ fn get_max_task_id(file_name: &str) -> Result<u32, Box<dyn Error>> {
 }
 
 fn new_list(file_name: &str) -> Result<File, Box<dyn Error>> {
-    let mut f: File = OpenOptions::new()
+    let mut f = OpenOptions::new()
         .write(true)
         .create(true)
         .open(file_name)?;
@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 completed: false,
             };
 
-            let mut f: File = OpenOptions::new()
+            let mut f = OpenOptions::new()
                 .write(true)
                 .append(true)
                 .create(cli.create)
@@ -128,39 +128,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(())
         }
         Command::List => {
-            let mut complete_tasks: HashMap<u32, Task> = HashMap::new();
-            let mut incomplete_tasks: HashMap<u32, Task> = HashMap::new();
-            read_tasks(
-                &mut incomplete_tasks,
-                &mut complete_tasks,
-                &cli.file_name,
-                cli.create,
-            )?;
+            let (mut todo, mut done) = (HashMap::new(), HashMap::new());
+            read_tasks(&mut done, &mut todo, &cli.file_name, cli.create)?;
 
             println!("To-do:");
-            for (_id, task) in incomplete_tasks {
+            for (_id, task) in done {
                 task.print_self();
             }
             println!("------------------------------\n");
             println!("Complete:");
-            for (_id, task) in complete_tasks {
+            for (_id, task) in todo {
                 task.print_self();
             }
             Ok(())
         }
         Command::Toggle { task_id } => {
-            let mut complete_tasks: HashMap<u32, Task> = HashMap::new();
-            let mut incomplete_tasks: HashMap<u32, Task> = HashMap::new();
-            read_tasks(
-                &mut incomplete_tasks,
-                &mut complete_tasks,
-                &cli.file_name,
-                false,
-            )?;
-            if let Some(task) = complete_tasks
-                .get_mut(&task_id)
-                .or_else(|| incomplete_tasks.get_mut(&task_id))
-            {
+            let mut todo: HashMap<u32, Task> = HashMap::new();
+            let mut done: HashMap<u32, Task> = HashMap::new();
+            read_tasks(&mut done, &mut todo, &cli.file_name, false)?;
+            if let Some(task) = todo.get_mut(&task_id).or_else(|| done.get_mut(&task_id)) {
                 task.completed = !task.completed;
             } else {
                 eprintln!(
@@ -169,15 +155,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 );
             }
 
-            let mut f: File = OpenOptions::new().write(true).open(&cli.file_name)?;
+            let mut f = OpenOptions::new().write(true).open(&cli.file_name)?;
 
             let mut writer = csv::Writer::from_writer(&mut f);
 
-            let mut combined_tasks: Vec<Task> = complete_tasks
+            let mut combined_tasks = todo
                 .drain()
-                .chain(incomplete_tasks.drain())
+                .chain(done.drain())
                 .map(|(_, t)| t)
-                .collect();
+                .collect::<Vec<Task>>();
 
             combined_tasks.sort_by_key(|t| t.id);
 
